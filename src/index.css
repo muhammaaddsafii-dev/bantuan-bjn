@@ -1,0 +1,206 @@
+@import "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Bojonegoro Social Aid Dashboard Design System */
+
+@layer base {
+  :root {
+    /* Government professional palette - Blue/Teal */
+    --background: 210 20% 98%;
+    --foreground: 215 25% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 215 25% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 25% 15%;
+
+    /* Deep government blue */
+    --primary: 215 70% 35%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Teal accent for social/aid theme */
+    --secondary: 175 50% 40%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 210 15% 93%;
+    --muted-foreground: 215 15% 45%;
+
+    /* Success green for positive stats */
+    --accent: 155 55% 42%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 65% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 20% 88%;
+    --input: 214 20% 88%;
+    --ring: 215 70% 35%;
+
+    --radius: 0.75rem;
+
+    /* Chart colors */
+    --chart-1: 215 70% 45%;
+    --chart-2: 175 50% 45%;
+    --chart-3: 155 55% 45%;
+    --chart-4: 35 85% 55%;
+    --chart-5: 280 50% 55%;
+
+    /* Sidebar - Slightly darker for contrast */
+    --sidebar-background: 215 25% 18%;
+    --sidebar-foreground: 210 15% 90%;
+    --sidebar-primary: 175 50% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 215 30% 25%;
+    --sidebar-accent-foreground: 210 15% 90%;
+    --sidebar-border: 215 20% 25%;
+    --sidebar-ring: 175 50% 50%;
+
+    /* Custom tokens */
+    --gradient-primary: linear-gradient(135deg, hsl(215 70% 35%) 0%, hsl(215 70% 45%) 100%);
+    --gradient-secondary: linear-gradient(135deg, hsl(175 50% 40%) 0%, hsl(175 50% 50%) 100%);
+    --gradient-hero: linear-gradient(135deg, hsl(215 25% 18%) 0%, hsl(215 70% 35%) 100%);
+    --shadow-card: 0 2px 8px -2px hsl(215 25% 15% / 0.08), 0 4px 16px -4px hsl(215 25% 15% / 0.06);
+    --shadow-elevated: 0 8px 24px -8px hsl(215 25% 15% / 0.12), 0 16px 48px -16px hsl(215 25% 15% / 0.08);
+    --shadow-glow: 0 0 20px hsl(175 50% 50% / 0.3);
+  }
+
+  .dark {
+    --background: 215 25% 10%;
+    --foreground: 210 15% 95%;
+
+    --card: 215 25% 14%;
+    --card-foreground: 210 15% 95%;
+
+    --popover: 215 25% 14%;
+    --popover-foreground: 210 15% 95%;
+
+    --primary: 175 50% 50%;
+    --primary-foreground: 215 25% 10%;
+
+    --secondary: 215 40% 45%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 215 25% 20%;
+    --muted-foreground: 210 15% 65%;
+
+    --accent: 155 55% 45%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 62.8% 45%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 215 25% 22%;
+    --input: 215 25% 22%;
+    --ring: 175 50% 50%;
+
+    --sidebar-background: 215 25% 8%;
+    --sidebar-foreground: 210 15% 90%;
+    --sidebar-primary: 175 50% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 215 25% 15%;
+    --sidebar-accent-foreground: 210 15% 90%;
+    --sidebar-border: 215 25% 15%;
+    --sidebar-ring: 175 50% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+@layer components {
+  .stat-card {
+    @apply bg-card rounded-xl p-5 transition-all duration-300;
+    box-shadow: var(--shadow-card);
+  }
+  
+  .stat-card:hover {
+    box-shadow: var(--shadow-elevated);
+    transform: translateY(-2px);
+  }
+
+  .gradient-primary {
+    background: var(--gradient-primary);
+  }
+
+  .gradient-secondary {
+    background: var(--gradient-secondary);
+  }
+
+  .gradient-hero {
+    background: var(--gradient-hero);
+  }
+
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+
+  .shadow-elevated {
+    box-shadow: var(--shadow-elevated);
+  }
+
+  .leaflet-container {
+    @apply rounded-xl;
+    font-family: inherit;
+  }
+
+  .leaflet-popup-content-wrapper {
+    @apply rounded-xl shadow-elevated p-0 overflow-hidden;
+  }
+
+  .leaflet-popup-content {
+    margin: 0;
+    min-width: 280px;
+  }
+
+  .marker-cluster {
+    @apply bg-primary/80 text-primary-foreground rounded-full flex items-center justify-center font-semibold;
+  }
+
+  .custom-marker {
+    @apply bg-primary border-2 border-white rounded-full shadow-lg;
+  }
+}
+
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-out forwards;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-slide-in {
+    animation: slideIn 0.4s ease-out forwards;
+  }
+
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateX(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+}
