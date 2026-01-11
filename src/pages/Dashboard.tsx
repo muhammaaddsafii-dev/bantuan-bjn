@@ -7,11 +7,11 @@ import { InteractiveMap } from '@/components/map/InteractiveMap';
 import { AidDistributionChart } from '@/components/charts/AidDistributionChart';
 import { DistrictChart } from '@/components/charts/DistrictChart';
 import { YearlyTrendChart } from '@/components/charts/YearlyTrendChart';
-import { statistics } from '@/data/mockData';
 import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { useStatistics } from '@/hooks/useStatistics';
 
 // API Configuration
 const API_BASE_URL = 'http://127.0.0.1:8000/api';
@@ -43,16 +43,11 @@ interface PenerimaBantuan {
   updated_at: string;
 }
 
-const getEconomicStatus = (income: string): string => {
-  const incomeNum = parseFloat(income);
-  if (incomeNum < 1000000) return 'Sangat Miskin';
-  if (incomeNum < 2000000) return 'Miskin';
-  return 'Rentan Miskin';
-};
-
 export default function Dashboard() {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
+  const { statistics, isLoading: statsLoading } = useStatistics();
+  
   const [penerimaBantuan, setPenerimaBantuan] = useState<PenerimaBantuan[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -84,7 +79,7 @@ export default function Dashboard() {
       }
       
       setPenerimaBantuan(allPenerima);
-      console.log(`✅ Loaded ${allPenerima.length} penerima bantuan`);
+      console.log(`✅ Dashboard: Loaded ${allPenerima.length} penerima bantuan`);
     } catch (error) {
       console.error('Error fetching penerima bantuan:', error);
       toast({
@@ -97,15 +92,25 @@ export default function Dashboard() {
     }
   };
 
-  // Calculate real statistics from API data
-  const totalRecipients = penerimaBantuan.length;
-  const recipientsWithCoordinates = penerimaBantuan.filter(p => p.latitude && p.longitude).length;
-  const sangatMiskin = penerimaBantuan.filter(p => getEconomicStatus(p.pendapatan_per_bulan) === 'Sangat Miskin').length;
-  const miskin = penerimaBantuan.filter(p => getEconomicStatus(p.pendapatan_per_bulan) === 'Miskin').length;
-  const rentanMiskin = penerimaBantuan.filter(p => getEconomicStatus(p.pendapatan_per_bulan) === 'Rentan Miskin').length;
+  // Prepare chart data from API statistics with correct structure
+  const aidDistributionData = statistics?.distribusi_jenis_bantuan.map((item, index) => {
+    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+    return {
+      type: item.nama,
+      count: item.total,
+      color: colors[index % colors.length]
+    };
+  }) || [];
 
-  // Get unique kecamatan count
-  const uniqueKecamatan = new Set(penerimaBantuan.map(p => p.kecamatan)).size;
+  const districtChartData = statistics?.distribusi_kecamatan.map(item => ({
+    district: item.nama,
+    recipients: item.total
+  })) || [];
+
+  const yearlyTrendData = statistics?.trend_tahunan.map(item => ({
+    year: item.tahun,
+    recipients: item.total
+  })) || [];
 
   return (
     <DashboardLayout 
@@ -116,7 +121,7 @@ export default function Dashboard() {
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="Total Penerima Bantuan"
-          value={totalRecipients.toLocaleString('id-ID')}
+          value={statsLoading ? '...' : (statistics?.total_penerima || 0).toLocaleString('id-ID')}
           subtitle="Kepala Keluarga"
           icon={Users}
           trend={{ value: 7.8, isPositive: true }}
@@ -125,24 +130,23 @@ export default function Dashboard() {
         />
         <StatCard
           title="Rumah Tangga Sangat Miskin"
-          value={sangatMiskin.toLocaleString('id-ID')}
-          subtitle={`${miskin} Miskin, ${rentanMiskin} Rentan`}
+          value={statsLoading ? '...' : (statistics?.status_ekonomi.sangat_miskin.total || 0).toLocaleString('id-ID')}
+          subtitle={statsLoading ? 'Loading...' : `${statistics?.status_ekonomi.sangat_miskin.percentage || 0}% dari total`}
           icon={Home}
-          trend={{ value: 3.2, isPositive: false }}
           delay={0.1}
         />
         <StatCard
-          title="Anggaran Tersalurkan"
-          value={`Rp ${(statistics.totalBudgetAllocated / 1000000000).toFixed(1)}M`}
-          subtitle="Tahun 2024"
+          title="Total Anggota Keluarga"
+          value={statsLoading ? '...' : (statistics?.total_anggota_keluarga || 0).toLocaleString('id-ID')}
+          subtitle="Jiwa terdaftar"
           icon={Wallet}
           variant="secondary"
           delay={0.2}
         />
         <StatCard
           title="Kecamatan Tercakup"
-          value={uniqueKecamatan.toString()}
-          subtitle={`${recipientsWithCoordinates} terdata lokasi`}
+          value={statsLoading ? '...' : (statistics?.lokasi.total_kecamatan || 0).toString()}
+          subtitle={statsLoading ? 'Loading...' : `${statistics?.lokasi.total_desa || 0} desa`}
           icon={TrendingUp}
           delay={0.3}
         />
@@ -162,7 +166,7 @@ export default function Dashboard() {
                 Peta Sebaran Penerima Bantuan
               </h3>
               <p className="text-xs text-muted-foreground">
-                Menampilkan {recipientsWithCoordinates} dari {totalRecipients} data
+                {statsLoading ? 'Loading...' : `Menampilkan ${statistics?.lokasi.total_dengan_koordinat || 0} dari ${statistics?.total_penerima || 0} data`}
               </p>
             </div>
             <Link to="/map">
@@ -188,13 +192,13 @@ export default function Dashboard() {
           </div>
         </motion.div>
 
-        <AidDistributionChart data={statistics.aidTypeDistribution} />
+        <AidDistributionChart data={aidDistributionData} />
       </div>
 
       {/* Charts Row */}
       <div className="grid gap-6 lg:grid-cols-2">
-        <DistrictChart data={statistics.districtDistribution} />
-        <YearlyTrendChart data={statistics.yearlyTrend} />
+        <DistrictChart data={districtChartData} />
+        <YearlyTrendChart data={yearlyTrendData} />
       </div>
     </DashboardLayout>
   );

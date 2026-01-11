@@ -6,8 +6,8 @@ import { InteractiveMap } from '@/components/map/InteractiveMap';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { AidDistributionChart } from '@/components/charts/AidDistributionChart';
 import { YearlyTrendChart } from '@/components/charts/YearlyTrendChart';
-import { statistics } from '@/data/mockData';
 import { Button } from '@/components/ui/button';
+import { useStatistics } from '@/hooks/useStatistics';
 
 // API Configuration
 const API_BASE_URL = 'http://127.0.0.1:8000/api';
@@ -39,14 +39,8 @@ interface PenerimaBantuan {
   updated_at: string;
 }
 
-const getEconomicStatus = (income: string): string => {
-  const incomeNum = parseFloat(income);
-  if (incomeNum < 1000000) return 'Sangat Miskin';
-  if (incomeNum < 2000000) return 'Miskin';
-  return 'Rentan Miskin';
-};
-
 export default function PublicDashboard() {
+  const { statistics, isLoading: statsLoading } = useStatistics();
   const [penerimaBantuan, setPenerimaBantuan] = useState<PenerimaBantuan[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -78,7 +72,7 @@ export default function PublicDashboard() {
       }
       
       setPenerimaBantuan(allPenerima);
-      console.log(`✅ Loaded ${allPenerima.length} penerima bantuan`);
+      console.log(`✅ PublicDashboard: Loaded ${allPenerima.length} penerima bantuan`);
     } catch (error) {
       console.error('Error fetching penerima bantuan:', error);
     } finally {
@@ -86,11 +80,20 @@ export default function PublicDashboard() {
     }
   };
 
-  // Calculate statistics from API data
-  const totalRecipients = penerimaBantuan.length;
-  const recipientsWithCoordinates = penerimaBantuan.filter(p => p.latitude && p.longitude).length;
-  const sangatMiskin = penerimaBantuan.filter(p => getEconomicStatus(p.pendapatan_per_bulan) === 'Sangat Miskin').length;
-  const uniqueKecamatan = new Set(penerimaBantuan.map(p => p.kecamatan)).size;
+  // Prepare chart data from API statistics with correct structure
+  const aidDistributionData = statistics?.distribusi_jenis_bantuan.map((item, index) => {
+    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+    return {
+      type: item.nama,
+      count: item.total,
+      color: colors[index % colors.length]
+    };
+  }) || [];
+
+  const yearlyTrendData = statistics?.trend_tahunan.map(item => ({
+    year: item.tahun,
+    recipients: item.total
+  })) || [];
 
   return (
     <div className="min-h-screen bg-background">
@@ -154,7 +157,7 @@ export default function PublicDashboard() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             title="Total Penerima Bantuan"
-            value={isLoading ? '...' : totalRecipients.toLocaleString('id-ID')}
+            value={statsLoading ? '...' : (statistics?.total_penerima || 0).toLocaleString('id-ID')}
             subtitle="Kepala Keluarga"
             icon={Users}
             variant="primary"
@@ -162,23 +165,23 @@ export default function PublicDashboard() {
           />
           <StatCard
             title="Rumah Tangga Sangat Miskin"
-            value={isLoading ? '...' : sangatMiskin.toLocaleString('id-ID')}
-            subtitle="Data terdaftar"
+            value={statsLoading ? '...' : (statistics?.status_ekonomi.sangat_miskin.total || 0).toLocaleString('id-ID')}
+            subtitle={statsLoading ? 'Loading...' : `${statistics?.status_ekonomi.sangat_miskin.percentage || 0}% dari total`}
             icon={Building2}
             delay={0.1}
           />
           <StatCard
-            title="Anggaran Tersalurkan"
-            value={`Rp ${(statistics.totalBudgetAllocated / 1000000000).toFixed(1)}M`}
-            subtitle="Tahun 2024"
+            title="Total Anggota Keluarga"
+            value={statsLoading ? '...' : (statistics?.total_anggota_keluarga || 0).toLocaleString('id-ID')}
+            subtitle="Jiwa terdaftar"
             icon={BarChart3}
             variant="secondary"
             delay={0.2}
           />
           <StatCard
             title="Kecamatan Tercakup"
-            value={isLoading ? '...' : uniqueKecamatan.toString()}
-            subtitle="dari 28 kecamatan"
+            value={statsLoading ? '...' : (statistics?.lokasi.total_kecamatan || 0).toString()}
+            subtitle={statsLoading ? 'Loading...' : `${statistics?.lokasi.total_desa || 0} desa`}
             icon={Map}
             delay={0.3}
           />
@@ -197,7 +200,7 @@ export default function PublicDashboard() {
             <div>
               <h2 className="font-semibold text-foreground">Peta Sebaran Penerima Bantuan</h2>
               <p className="text-sm text-muted-foreground">
-                Klik marker untuk melihat detail ({recipientsWithCoordinates} lokasi terdata)
+                {statsLoading ? 'Loading...' : `Klik marker untuk melihat detail (${statistics?.lokasi.total_dengan_koordinat || 0} lokasi terdata)`}
               </p>
             </div>
             <Link to="/map">
@@ -226,8 +229,8 @@ export default function PublicDashboard() {
       {/* Charts Section */}
       <section className="container mx-auto px-4 pb-12">
         <div className="grid gap-6 lg:grid-cols-2">
-          <AidDistributionChart data={statistics.aidTypeDistribution} />
-          <YearlyTrendChart data={statistics.yearlyTrend} />
+          <AidDistributionChart data={aidDistributionData} />
+          <YearlyTrendChart data={yearlyTrendData} />
         </div>
       </section>
 
