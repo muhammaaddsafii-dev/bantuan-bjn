@@ -1,6 +1,9 @@
+// AdminDashboard dengan Interactive Map Picker menggunakan Vanilla Leaflet
+// Fitur: CRUD Data, Pagination, Map Picker, Photo Upload
+
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Search, Edit2, Trash2, Eye, Upload, X, ImagePlus } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, Eye, Upload, X, ImagePlus, MapPin, Navigation, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,6 +19,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -40,6 +44,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { MapPicker } from '@/components/MapPicker';
 
 // API Configuration
 const API_BASE_URL = 'http://127.0.0.1:8000/api';
@@ -120,6 +125,11 @@ export default function AdminDashboard() {
   const [penerimaToDelete, setPenerimaToDelete] = useState<PenerimaBantuan | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(10);
   
   // Data states
   const [penerimaBantuan, setPenerimaBantuan] = useState<PenerimaBantuan[]>([]);
@@ -171,18 +181,34 @@ export default function AdminDashboard() {
     }
   };
 
-  // Fetch Penerima Bantuan
+  // Fetch Penerima Bantuan - FETCH ALL PAGES
   const fetchPenerimaBantuan = async (search?: string) => {
     try {
-      const url = search 
+      let allPenerima: PenerimaBantuan[] = [];
+      let nextUrl: string | null = search 
         ? `${API_BASE_URL}/penerima-bantuan/?search=${encodeURIComponent(search)}`
         : `${API_BASE_URL}/penerima-bantuan/`;
       
-      const response = await fetch(url);
-      if (!response.ok) throw new Error('Failed to fetch');
+      // Loop through all pages to get ALL data
+      while (nextUrl) {
+        const response = await fetch(nextUrl);
+        if (!response.ok) throw new Error('Failed to fetch');
+        
+        const data = await response.json();
+        
+        // Check if response has pagination
+        if (data.results) {
+          allPenerima = [...allPenerima, ...data.results];
+          nextUrl = data.next; // Get next page URL
+        } else {
+          // No pagination, just set the data
+          allPenerima = data;
+          nextUrl = null;
+        }
+      }
       
-      const data = await response.json();
-      setPenerimaBantuan(data.results || data);
+      setPenerimaBantuan(allPenerima);
+      console.log(`✅ AdminDashboard: Loaded ${allPenerima.length} penerima bantuan`);
     } catch (error) {
       console.error('Error fetching penerima bantuan:', error);
       toast({
@@ -193,14 +219,31 @@ export default function AdminDashboard() {
     }
   };
 
-  // Fetch Kecamatan
+  // Fetch ALL Kecamatan (without pagination limit)
   const fetchKecamatan = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/kecamatan/`);
-      if (!response.ok) throw new Error('Failed to fetch');
+      let allKecamatan: Kecamatan[] = [];
+      let nextUrl: string | null = `${API_BASE_URL}/kecamatan/`;
       
-      const data = await response.json();
-      setKecamatanList(data.results || data);
+      // Loop through all pages to get all kecamatan
+      while (nextUrl) {
+        const response = await fetch(nextUrl);
+        if (!response.ok) throw new Error('Failed to fetch');
+        
+        const data = await response.json();
+        
+        // Check if response has pagination
+        if (data.results) {
+          allKecamatan = [...allKecamatan, ...data.results];
+          nextUrl = data.next;
+        } else {
+          // No pagination, just set the data
+          allKecamatan = data;
+          nextUrl = null;
+        }
+      }
+      
+      setKecamatanList(allKecamatan);
     } catch (error) {
       console.error('Error fetching kecamatan:', error);
     }
@@ -227,6 +270,7 @@ export default function AdminDashboard() {
       } else {
         fetchPenerimaBantuan();
       }
+      setCurrentPage(1); // Reset to first page on search
     }, 500);
 
     return () => clearTimeout(delayDebounceFn);
@@ -238,6 +282,45 @@ export default function AdminDashboard() {
       ...prev,
       [field]: value,
     }));
+  };
+
+  // Get current location using browser geolocation
+  const getCurrentLocation = () => {
+    setIsGettingLocation(true);
+    
+    if (!navigator.geolocation) {
+      toast({
+        title: 'Error',
+        description: 'Browser Anda tidak mendukung geolocation',
+        variant: 'destructive',
+      });
+      setIsGettingLocation(false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        setFormData(prev => ({
+          ...prev,
+          latitude: parseFloat(latitude.toFixed(6)),
+          longitude: parseFloat(longitude.toFixed(6)),
+        }));
+        toast({
+          title: 'Berhasil',
+          description: 'Lokasi berhasil didapatkan',
+        });
+        setIsGettingLocation(false);
+      },
+      (error) => {
+        toast({
+          title: 'Error',
+          description: 'Gagal mendapatkan lokasi. Pastikan Anda mengizinkan akses lokasi.',
+          variant: 'destructive',
+        });
+        setIsGettingLocation(false);
+      }
+    );
   };
 
   // Reset form
@@ -459,48 +542,76 @@ export default function AdminDashboard() {
     }
   };
 
-  const filteredPenerima = penerimaBantuan;
+  // Filtered data based on search
+  const filteredPenerima = penerimaBantuan.filter(p =>
+    p.nama_kepala_keluarga.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    p.kecamatan_nama.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    p.nama_desa.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredPenerima.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentData = filteredPenerima.slice(startIndex, endIndex);
+
+  const handlePreviousPage = () => {
+    setCurrentPage(prev => Math.max(prev - 1, 1));
+  };
+
+  const handleNextPage = () => {
+    setCurrentPage(prev => Math.min(prev + 1, totalPages));
+  };
 
   return (
-    <DashboardLayout 
-      title="Kelola Data Penerima" 
-      subtitle="Input dan kelola data penerima bantuan sosial"
-    >
-      {/* Actions Bar */}
+    <DashboardLayout title="Data Penerima Bantuan" subtitle="Kelola data penerima bantuan sosial">
+      {/* Header */}
       <motion.div
-        initial={{ opacity: 0, y: -10 }}
+        initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+        className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6"
       >
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold gradient-text">Data Penerima Bantuan</h1>
+          <p className="text-muted-foreground mt-1">Kelola data penerima bantuan sosial</p>
+        </div>
+        <Button onClick={handleCreate} className="btn-gradient">
+          <Plus className="h-4 w-4 mr-2" />
+          Tambah Data
+        </Button>
+      </motion.div>
+
+      {/* Search Bar */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.05 }}
+        className="stat-card mb-6"
+      >
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Cari nama, desa, atau kecamatan..."
+            placeholder="Cari berdasarkan nama, kecamatan, atau desa..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10"
           />
         </div>
-
-        <Button className="gap-2" onClick={handleCreate}>
-          <Plus className="h-4 w-4" />
-          Tambah Data
-        </Button>
       </motion.div>
 
-      {/* Form Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={(open) => {
-        setIsDialogOpen(open);
-        if (!open) resetForm();
-      }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      {/* Create/Edit Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {selectedPenerima ? 'Edit Data Penerima' : 'Tambah Data Penerima Baru'}
+              {selectedPenerima ? 'Edit Penerima Bantuan' : 'Tambah Penerima Bantuan Baru'}
             </DialogTitle>
+            <DialogDescription>
+              {selectedPenerima ? 'Perbarui informasi penerima bantuan' : 'Masukkan data penerima bantuan baru'}
+            </DialogDescription>
           </DialogHeader>
-          
-          <form className="space-y-4 mt-4" onSubmit={handleSubmit}>
+
+          <form onSubmit={handleSubmit} className="space-y-4 mt-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="headName">Nama Kepala Keluarga *</Label>
@@ -603,29 +714,91 @@ export default function AdminDashboard() {
               </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="lat">Koordinat Latitude</Label>
-                <Input
-                  id="lat"
-                  type="number"
-                  step="any"
-                  placeholder="-7.1500"
-                  value={formData.latitude || ''}
-                  onChange={(e) => handleInputChange('latitude', e.target.value ? parseFloat(e.target.value) : null)}
-                />
+            {/* Koordinat Location - WITH INTERACTIVE MAP */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <MapPin className="h-4 w-4 text-muted-foreground" />
+                <Label>Pilih Lokasi pada Peta</Label>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="lng">Koordinat Longitude</Label>
-                <Input
-                  id="lng"
-                  type="number"
-                  step="any"
-                  placeholder="111.8800"
-                  value={formData.longitude || ''}
-                  onChange={(e) => handleInputChange('longitude', e.target.value ? parseFloat(e.target.value) : null)}
-                />
+
+              <p className="text-sm text-muted-foreground">
+                Klik pada peta atau drag marker untuk memilih lokasi. Anda juga bisa klik tombol "Lokasi Saya" untuk menggunakan lokasi saat ini.
+              </p>
+
+              {/* Interactive Map */}
+              <MapPicker
+                latitude={formData.latitude}
+                longitude={formData.longitude}
+                onLocationChange={(lat, lng) => {
+                  setFormData(prev => ({
+                    ...prev,
+                    latitude: parseFloat(lat.toFixed(6)),
+                    longitude: parseFloat(lng.toFixed(6)),
+                  }));
+                }}
+              />
+
+              {/* Button untuk get current location */}
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={getCurrentLocation}
+                  disabled={isGettingLocation}
+                  className="flex-1"
+                >
+                  <Navigation className="h-4 w-4 mr-2" />
+                  {isGettingLocation ? 'Mengambil...' : 'Gunakan Lokasi Saya'}
+                </Button>
               </div>
+              
+              {/* Manual input sebagai alternatif */}
+              <details className="group">
+                <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground flex items-center gap-2">
+                  <span>atau input koordinat manual</span>
+                </summary>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="lat" className="text-sm">Latitude</Label>
+                    <Input
+                      id="lat"
+                      type="number"
+                      step="any"
+                      placeholder="-7.150000"
+                      value={formData.latitude || ''}
+                      onChange={(e) => handleInputChange('latitude', e.target.value ? parseFloat(e.target.value) : null)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="lng" className="text-sm">Longitude</Label>
+                    <Input
+                      id="lng"
+                      type="number"
+                      step="any"
+                      placeholder="111.880000"
+                      value={formData.longitude || ''}
+                      onChange={(e) => handleInputChange('longitude', e.target.value ? parseFloat(e.target.value) : null)}
+                    />
+                  </div>
+                </div>
+              </details>
+
+              {formData.latitude && formData.longitude && (
+                <div className="p-3 bg-muted rounded-md">
+                  <p className="text-sm text-muted-foreground">
+                    Lokasi terpilih: {formData.latitude.toFixed(6)}, {formData.longitude.toFixed(6)}
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${formData.latitude},${formData.longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-2 text-primary hover:underline inline-flex items-center"
+                    >
+                      Buka di Google Maps <ExternalLink className="h-3 w-3 ml-1" />
+                    </a>
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Image Upload */}
@@ -735,6 +908,9 @@ export default function AdminDashboard() {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Detail Penerima Bantuan</DialogTitle>
+            <DialogDescription>
+              Informasi lengkap penerima bantuan
+            </DialogDescription>
           </DialogHeader>
 
           {selectedPenerima && (
@@ -769,9 +945,9 @@ export default function AdminDashboard() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-muted-foreground">Jenis Bantuan</Label>
-                  <p className="font-medium">
+                  <div className="font-medium">
                     <Badge variant="outline">{selectedPenerima.jenis_bantuan_nama}</Badge>
-                  </p>
+                  </div>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Pendapatan/Bulan</Label>
@@ -783,11 +959,11 @@ export default function AdminDashboard() {
 
               <div>
                 <Label className="text-muted-foreground">Status Ekonomi</Label>
-                <p className="font-medium">
+                <div className="font-medium">
                   <Badge className={cn('text-xs', statusColors[getEconomicStatus(selectedPenerima.pendapatan_per_bulan)])}>
                     {getEconomicStatus(selectedPenerima.pendapatan_per_bulan)}
                   </Badge>
-                </p>
+                </div>
               </div>
 
               {(selectedPenerima.latitude && selectedPenerima.longitude) && (
@@ -880,7 +1056,7 @@ export default function AdminDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredPenerima.map((penerima) => (
+                  {currentData.map((penerima) => (
                     <TableRow key={penerima.id}>
                       <TableCell className="font-medium">
                         <div>
@@ -946,6 +1122,60 @@ export default function AdminDashboard() {
             {filteredPenerima.length === 0 && (
               <div className="py-12 text-center">
                 <p className="text-muted-foreground">Tidak ada data yang ditemukan.</p>
+              </div>
+            )}
+
+            {/* Pagination Controls */}
+            {filteredPenerima.length > 0 && (
+              <div className="flex items-center justify-between px-6 py-4 border-t">
+                <div className="text-sm text-muted-foreground">
+                  Menampilkan {startIndex + 1} - {Math.min(endIndex, filteredPenerima.length)} dari {filteredPenerima.length} data
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handlePreviousPage}
+                    disabled={currentPage === 1}
+                  >
+                    <ChevronLeft className="h-4 w-4 mr-1" />
+                    Previous
+                  </Button>
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                      let pageNumber;
+                      if (totalPages <= 5) {
+                        pageNumber = i + 1;
+                      } else if (currentPage <= 3) {
+                        pageNumber = i + 1;
+                      } else if (currentPage >= totalPages - 2) {
+                        pageNumber = totalPages - 4 + i;
+                      } else {
+                        pageNumber = currentPage - 2 + i;
+                      }
+                      return (
+                        <Button
+                          key={pageNumber}
+                          variant={currentPage === pageNumber ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setCurrentPage(pageNumber)}
+                          className="w-10"
+                        >
+                          {pageNumber}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleNextPage}
+                    disabled={currentPage === totalPages}
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </div>
               </div>
             )}
           </>

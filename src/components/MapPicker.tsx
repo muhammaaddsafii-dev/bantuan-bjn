@@ -1,145 +1,91 @@
-import { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Button } from '@/components/ui/button';
-import { MapPin, X } from 'lucide-react';
 
-// Fix Leaflet default marker icon issue
+// Fix Leaflet default icon issue
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
 interface MapPickerProps {
   latitude: number | null;
   longitude: number | null;
-  onLocationSelect: (lat: number, lng: number) => void;
-  onClose?: () => void;
+  onLocationChange: (lat: number, lng: number) => void;
 }
 
-// Component to handle map clicks
-function LocationMarker({ 
-  position, 
-  setPosition 
-}: { 
-  position: [number, number] | null; 
-  setPosition: (pos: [number, number]) => void;
-}) {
-  useMapEvents({
-    click(e) {
-      setPosition([e.latlng.lat, e.latlng.lng]);
-    },
-  });
+export function MapPicker({ latitude, longitude, onLocationChange }: MapPickerProps) {
+  const mapRef = useRef<L.Map | null>(null);
+  const markerRef = useRef<L.Marker | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
 
-  return position === null ? null : <Marker position={position} />;
-}
+  useEffect(() => {
+    // Initialize map only once
+    if (!mapContainerRef.current || mapRef.current) return;
 
-export function MapPicker({ latitude, longitude, onLocationSelect, onClose }: MapPickerProps) {
-  // Default center: Bojonegoro
-  const defaultCenter: [number, number] = [-7.150370, 111.882050];
-  const [position, setPosition] = useState<[number, number] | null>(
-    latitude && longitude ? [latitude, longitude] : null
-  );
-  const [mapCenter, setMapCenter] = useState<[number, number]>(
-    latitude && longitude ? [latitude, longitude] : defaultCenter
-  );
+    const initialLat = latitude || -7.1500;
+    const initialLng = longitude || 111.8800;
 
-  const handleConfirm = () => {
-    if (position) {
-      onLocationSelect(position[0], position[1]);
+    // Create map
+    const map = L.map(mapContainerRef.current).setView([initialLat, initialLng], 13);
+
+    // Add tile layer
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    // Create marker
+    const marker = L.marker([initialLat, initialLng], {
+      draggable: true
+    }).addTo(map);
+
+    // Handle marker drag
+    marker.on('dragend', () => {
+      const position = marker.getLatLng();
+      onLocationChange(position.lat, position.lng);
+    });
+
+    // Handle map click
+    map.on('click', (e: L.LeafletMouseEvent) => {
+      const { lat, lng } = e.latlng;
+      marker.setLatLng([lat, lng]);
+      onLocationChange(lat, lng);
+    });
+
+    mapRef.current = map;
+    markerRef.current = marker;
+
+    // Cleanup
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+        markerRef.current = null;
+      }
+    };
+  }, []); // Only run once on mount
+
+  // Update marker position when props change
+  useEffect(() => {
+    if (markerRef.current && latitude && longitude) {
+      markerRef.current.setLatLng([latitude, longitude]);
+      if (mapRef.current) {
+        mapRef.current.setView([latitude, longitude], 13);
+      }
     }
-  };
-
-  const handleUseCurrentLocation = () => {
-    if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const lat = position.coords.latitude;
-          const lng = position.coords.longitude;
-          setPosition([lat, lng]);
-          setMapCenter([lat, lng]);
-        },
-        (error) => {
-          console.error('Error getting location:', error);
-          alert('Tidak dapat mengakses lokasi. Pastikan izin lokasi diaktifkan.');
-        }
-      );
-    } else {
-      alert('Geolocation tidak didukung di browser Anda.');
-    }
-  };
+  }, [latitude, longitude]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold">Pilih Lokasi di Peta</h3>
-          <p className="text-sm text-muted-foreground">
-            Klik pada peta untuk menandai lokasi
-          </p>
-        </div>
-        {onClose && (
-          <Button variant="ghost" size="icon" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
-        )}
-      </div>
-
-      {/* Coordinates Display */}
-      {position && (
-        <div className="p-3 bg-muted rounded-lg">
-          <p className="text-sm">
-            <strong>Koordinat Terpilih:</strong>
-          </p>
-          <p className="text-sm font-mono">
-            Latitude: {position[0].toFixed(6)} | Longitude: {position[1].toFixed(6)}
-          </p>
-        </div>
-      )}
-
-      {/* Map Container */}
-      <div className="relative rounded-lg overflow-hidden border" style={{ height: '400px' }}>
-        <MapContainer
-          center={mapCenter}
-          zoom={13}
-          style={{ height: '100%', width: '100%' }}
-          scrollWheelZoom={true}
-        >
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
-          <LocationMarker position={position} setPosition={setPosition} />
-        </MapContainer>
-      </div>
-
-      {/* Action Buttons */}
-      <div className="flex gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleUseCurrentLocation}
-          className="flex-1"
-        >
-          <MapPin className="h-4 w-4 mr-2" />
-          Gunakan Lokasi Saat Ini
-        </Button>
-        <Button
-          type="button"
-          onClick={handleConfirm}
-          disabled={!position}
-          className="flex-1"
-        >
-          Konfirmasi Lokasi
-        </Button>
-      </div>
-
-      <p className="text-xs text-muted-foreground text-center">
-        💡 Tips: Zoom in untuk akurasi lebih baik. Klik pada lokasi rumah penerima bantuan.
-      </p>
-    </div>
+    <div 
+      ref={mapContainerRef} 
+      style={{ 
+        height: '300px', 
+        width: '100%', 
+        borderRadius: '8px',
+        border: '1px solid hsl(var(--border))'
+      }} 
+    />
   );
 }

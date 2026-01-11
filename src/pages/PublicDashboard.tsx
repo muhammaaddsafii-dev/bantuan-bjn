@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Building2, Map, BarChart3, Users, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -5,10 +6,92 @@ import { InteractiveMap } from '@/components/map/InteractiveMap';
 import { StatCard } from '@/components/dashboard/StatCard';
 import { AidDistributionChart } from '@/components/charts/AidDistributionChart';
 import { YearlyTrendChart } from '@/components/charts/YearlyTrendChart';
-import { households, statistics } from '@/data/mockData';
+import { statistics } from '@/data/mockData';
 import { Button } from '@/components/ui/button';
 
+// API Configuration
+const API_BASE_URL = 'http://127.0.0.1:8000/api';
+
+// Types
+interface Photo {
+  id: number;
+  penerima_bantuan: number;
+  file_path: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface PenerimaBantuan {
+  id: number;
+  nama_kepala_keluarga: string;
+  jumlah_anggota_keluarga: number;
+  kecamatan: number;
+  kecamatan_nama: string;
+  nama_desa: string;
+  alamat: string;
+  jenis_bantuan: number;
+  jenis_bantuan_nama: string;
+  pendapatan_per_bulan: string;
+  latitude: string | null;
+  longitude: string | null;
+  photos: Photo[];
+  created_at: string;
+  updated_at: string;
+}
+
+const getEconomicStatus = (income: string): string => {
+  const incomeNum = parseFloat(income);
+  if (incomeNum < 1000000) return 'Sangat Miskin';
+  if (incomeNum < 2000000) return 'Miskin';
+  return 'Rentan Miskin';
+};
+
 export default function PublicDashboard() {
+  const [penerimaBantuan, setPenerimaBantuan] = useState<PenerimaBantuan[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetchPenerimaBantuan();
+  }, []);
+
+  const fetchPenerimaBantuan = async () => {
+    try {
+      let allPenerima: PenerimaBantuan[] = [];
+      let nextUrl: string | null = `${API_BASE_URL}/penerima-bantuan/`;
+      
+      // Loop through all pages to get ALL data
+      while (nextUrl) {
+        const response = await fetch(nextUrl);
+        if (!response.ok) throw new Error('Failed to fetch');
+        
+        const data = await response.json();
+        
+        // Check if response has pagination
+        if (data.results) {
+          allPenerima = [...allPenerima, ...data.results];
+          nextUrl = data.next; // Get next page URL
+        } else {
+          // No pagination, just set the data
+          allPenerima = data;
+          nextUrl = null;
+        }
+      }
+      
+      setPenerimaBantuan(allPenerima);
+      console.log(`✅ Loaded ${allPenerima.length} penerima bantuan`);
+    } catch (error) {
+      console.error('Error fetching penerima bantuan:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Calculate statistics from API data
+  const totalRecipients = penerimaBantuan.length;
+  const recipientsWithCoordinates = penerimaBantuan.filter(p => p.latitude && p.longitude).length;
+  const sangatMiskin = penerimaBantuan.filter(p => getEconomicStatus(p.pendapatan_per_bulan) === 'Sangat Miskin').length;
+  const uniqueKecamatan = new Set(penerimaBantuan.map(p => p.kecamatan)).size;
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -56,7 +139,7 @@ export default function PublicDashboard() {
                 </Button>
               </Link>
               <Link to="/statistics">
-                <Button size="lg" variant="outline" className="gap-2 border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10">
+                <Button size="lg" variant="outline" className="gap-2 border-primary-foreground/30 text-black hover:bg-primary-foreground/10">
                   <BarChart3 className="h-4 w-4" />
                   Statistik
                 </Button>
@@ -71,15 +154,15 @@ export default function PublicDashboard() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             title="Total Penerima Bantuan"
-            value={statistics.totalRecipients.toLocaleString('id-ID')}
+            value={isLoading ? '...' : totalRecipients.toLocaleString('id-ID')}
             subtitle="Kepala Keluarga"
             icon={Users}
             variant="primary"
             delay={0}
           />
           <StatCard
-            title="Rumah Tangga Miskin"
-            value={statistics.totalPoorHouseholds.toLocaleString('id-ID')}
+            title="Rumah Tangga Sangat Miskin"
+            value={isLoading ? '...' : sangatMiskin.toLocaleString('id-ID')}
             subtitle="Data terdaftar"
             icon={Building2}
             delay={0.1}
@@ -94,7 +177,7 @@ export default function PublicDashboard() {
           />
           <StatCard
             title="Kecamatan Tercakup"
-            value="28"
+            value={isLoading ? '...' : uniqueKecamatan.toString()}
             subtitle="dari 28 kecamatan"
             icon={Map}
             delay={0.3}
@@ -113,7 +196,9 @@ export default function PublicDashboard() {
           <div className="flex items-center justify-between border-b border-border p-4">
             <div>
               <h2 className="font-semibold text-foreground">Peta Sebaran Penerima Bantuan</h2>
-              <p className="text-sm text-muted-foreground">Klik marker untuk melihat detail</p>
+              <p className="text-sm text-muted-foreground">
+                Klik marker untuk melihat detail ({recipientsWithCoordinates} lokasi terdata)
+              </p>
             </div>
             <Link to="/map">
               <Button variant="ghost" size="sm" className="gap-2">
@@ -123,7 +208,17 @@ export default function PublicDashboard() {
             </Link>
           </div>
           <div className="h-96">
-            <InteractiveMap households={households} />
+            {isLoading ? (
+              <div className="flex h-full items-center justify-center">
+                <p className="text-sm text-muted-foreground">Memuat peta...</p>
+              </div>
+            ) : (
+              <InteractiveMap 
+                penerimaBantuan={penerimaBantuan}
+                center={[-7.15, 111.88]}
+                zoom={11}
+              />
+            )}
           </div>
         </motion.div>
       </section>
